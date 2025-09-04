@@ -33,22 +33,34 @@
             filter: brightness(1.1);
         }
         .domain-label {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
             fill: #2c3e50;
             text-shadow: 1px 1px 2px rgba(255,255,255,0.9);
-            pointer-events: none;
+            pointer-events: all;
+            text-anchor: middle;
+            font-family: Arial, sans-serif;
         }
         .subdomain-label {
             fill: #34495e;
             font-weight: 500;
             pointer-events: none;
+            text-anchor: middle;
+            font-family: Arial, sans-serif;
         }
-        .subdomain-amount {
-            font-size: 12px;
-            fill: #f8f9fa;
+        .external-label {
+            fill: #2c3e50;
             font-weight: 600;
-            pointer-events: none;
+            font-size: 12px;
+            pointer-events: all;
+            text-anchor: middle;
+            font-family: Arial, sans-serif;
+        }
+        .label-line {
+            stroke: #666;
+            stroke-width: 1.5;
+            stroke-dasharray: 3,3;
+            opacity: 0.7;
         }
         .stats-panel {
             position: absolute;
@@ -95,170 +107,34 @@
 <body>
 <div id="chart">
     <div class="stats-panel" id="stats"></div>
+    <div style="margin: 16px 0 8px 0;">
+        <label for="bubble-scale" style="font-size:14px;font-weight:500;margin-right:8px;">Bubble Size:</label>
+        <input type="range" id="bubble-scale" min="0.5" max="2.5" step="0.01" value="1" style="width:220px;vertical-align:middle;">
+        <span id="bubble-scale-value" style="font-size:13px;margin-left:8px;">1.00x</span>
+    </div>
     <button id="download-svg-btn">Download SVG</button>
-    <button id="download-html-btn">Download HTML</button>
 </div>
 <script>
-/*DATA_PLACEHOLDER*/
-
-let currentData = null;
-let svg = null;
-
-function initializeChart() {
-    const container = document.getElementById('chart');
-    const containerRect = container.getBoundingClientRect();
-    const width = Math.max(containerRect.width - 40, 900);
-    const height = Math.max(containerRect.height - 40, 700);
-    d3.select("#chart").selectAll("svg").remove();
-    svg = d3.select("#chart")
-        .append("svg")
-        .attr("width", width)
-        .attr("height", height)
-        .style("display", "block");
-    return { width, height };
-}
-
-function drawBubbleChart(data) {
-    currentData = data;
-    const { width, height } = initializeChart();
-    const processedData = data.map(domain => ({
-        name: domain.name,
-        children: domain.children || []
-    }));
-    const root = d3.hierarchy({children: processedData})
-        .sum(d => d.value || 0)
-        .sort((a, b) => b.value - a.value);
-    // Stats panel
-    const totalPubs = root.value;
-    const domainCount = processedData.length;
-    const subdomainCount = processedData.reduce((sum, d) => sum + (d.children?.length || 0), 0);
-    d3.select("#stats").html(`
-        <strong>Dataset Overview</strong><br>
-        Domains: ${domainCount}<br>
-        Subdomains: ${subdomainCount}<br>
-        Total Publications: ${totalPubs}
-    `);
-    // Pack layout
-    const pack = d3.pack()
-        .size([width - 60, height - 60])
-        .padding(36);
-    pack(root);
-    // Color palette
-    const colorScale = d3.scaleOrdinal([
-        "#3498db", "#e74c3c", "#2ecc71", "#f39c12", 
-        "#9b59b6", "#1abc9c", "#34495e", "#e67e22",
-        "#16a085", "#c0392b", "#8e44ad", "#f1c40f"
-    ]);
-    // Container group
-    const container = svg.append("g")
-        .attr("transform", `translate(30, 30)`);
-    // Nodes
-    const node = container.selectAll("g")
-        .data(root.descendants())
-        .join("g")
-        .attr("class", d => d.depth === 0 ? "root-node" : d.depth === 1 ? "domain-node" : "subdomain-node")
-        .attr("transform", d => `translate(${d.x},${d.y})`);
-    // Tooltip element
-    let tooltip = d3.select("body")
-        .append("div")
-        .attr("class", "tooltip")
-        .style("opacity", 0);
-
-    // Circles
-    node.append("circle")
-        .attr("r", d => d.r)
-        .attr("fill", d => {
-            if (d.depth === 0) return "transparent";
-            if (d.depth === 1) {
-                const color = colorScale(d.data.name);
-                return d3.color(color).copy({opacity: 0.3});
-            }
-            return colorScale(d.parent.data.name);
-        })
-        .attr("stroke", d => d.depth === 1 ? colorScale(d.data.name) : "#fff")
-        .attr("stroke-width", d => d.depth === 1 ? 3 : 2)
-        .attr("class", "bubble")
-        .style("opacity", d => d.depth === 0 ? 0 : (d.depth === 1 ? 0.4 : 0.85))
-        .on("mouseover", function(event, d) {
-            if (d.depth === 0) return;
-            d3.select(this).style("opacity", 1);
-            tooltip.transition().duration(200).style("opacity", 1);
-            let tooltipContent = "";
-            if (d.depth === 1) {
-                const totalValue = d.children ? d.children.reduce((sum, child) => sum + child.value, 0) : 0;
-                const childCount = d.children ? d.children.length : 0;
-                tooltipContent = `
-                    <strong>${d.data.name} Domain</strong><br>
-                    Subdomains: ${childCount}<br>
-                    Total Publications: ${totalValue}
-                `;
-            } else {
-                const percentage = ((d.data.value / currentData.reduce((sum, domain) => 
-                    sum + domain.children.reduce((childSum, child) => childSum + child.value, 0), 0)) * 100).toFixed(1);
-                tooltipContent = `
-                    <strong>${d.data.name}</strong><br>
-                    Domain: ${d.parent.data.name}<br>
-                    Publications: ${d.data.value}<br>
-                    Share: ${percentage}%
-                `;
-            }
-            tooltip.html(tooltipContent)
-                .style("left", (event.pageX + 15) + "px")
-                .style("top", (event.pageY - 15) + "px");
-        })
-        .on("mouseout", function(event, d) {
-            if (d.depth === 0) return;
-            d3.select(this).style("opacity", d => d.depth === 1 ? 0.4 : 0.85);
-            tooltip.transition().duration(200).style("opacity", 0);
-        });
-    // Domain labels
-    node.filter(d => d.depth === 1 && d.r > 22)
-        .append("text")
-        .attr("y", d => -d.r + 8)
-        .attr("text-anchor", "middle")
-        .attr("class", "domain-label")
-        .style("font-size", d => Math.min(d.r * 2/ (d.data.name.length/2), 29) + "px")
-        .text(d => {
-            const maxLabelLength = Math.floor(d.r * 0.15);
-            let label = d.data.name.toUpperCase();
-            if (label.length > maxLabelLength) {
-                label = label.substring(0, maxLabelLength) + "...";
-            }
-            return label;
-        });
-    // Subdomain labels
-    node.filter(d => d.depth === 2 && d.r > 12)
-        .append("text")
-        .attr("text-anchor", "middle")
-        .attr("class", "subdomain-label")
-        .style("font-size", d => {
-            const labelLength = d.data.name.length;
-            const maxFontByRadius = d.r * 2.2 / (labelLength);
-            return Math.max(12, Math.min(maxFontByRadius, d.r / 2, 22)) + "px";
-        })
-        .attr("y", -8)
-        .text(d => {
-            const maxLabelLength = Math.floor(d.r * 0.2);
-            let label = d.data.name;
-            if (label.length > maxLabelLength) {
-                label = label.substring(0, maxLabelLength) + "...";
-            }
-            return label;
-        });
-    // Subdomain amount
-    node.filter(d => d.depth === 2 && d.r > 18 && d.data.value >= 30)
-        .append("text")
-        .attr("text-anchor", "middle")
-        .attr("class", "subdomain-amount")
-        .attr("y", 12)
-        .text(d => d.data.value);
-}
-
+// Download SVG button handler
 document.getElementById('download-svg-btn').onclick = function() {
-    var svg = document.querySelector('#chart svg');
-    if (!svg) return alert('SVG not found!');
+    var svgEl = document.querySelector('#chart svg');
+    if (!svgEl) return alert('SVG not found!');
+    // Clone SVG and add top margin
+    var clone = svgEl.cloneNode(true);
+    var origHeight = clone.getAttribute('height');
+    var origWidth = clone.getAttribute('width');
+    var marginTop = 40;
+    clone.setAttribute('height', parseInt(origHeight) + marginTop);
+    // Create a group and shift all content down
+    var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', 'translate(0,' + marginTop + ')');
+    // Move all children into the group
+    while (clone.firstChild) {
+        g.appendChild(clone.firstChild);
+    }
+    clone.appendChild(g);
     var serializer = new XMLSerializer();
-    var source = serializer.serializeToString(svg);
+    var source = serializer.serializeToString(clone);
     var blob = new Blob([source], {type: 'image/svg+xml;charset=utf-8'});
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -270,25 +146,295 @@ document.getElementById('download-svg-btn').onclick = function() {
     URL.revokeObjectURL(url);
 };
 
-document.getElementById('download-html-btn').onclick = function() {
-    var htmlContent = document.documentElement.outerHTML;
-    var blob = new Blob([htmlContent], {type: 'text/html'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'bubble-graph.html';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-};
+/*DATA_PLACEHOLDER*/
+
+let currentData = null;
+let svg = null;
+let bubbleScale = 1;
+
+function initializeChart() {
+    const container = document.getElementById('chart');
+    const containerRect = container.getBoundingClientRect();
+    const width = Math.max(containerRect.width - 40, 100);
+    const height = Math.max(containerRect.height - 40, 700);
+    d3.select("#chart").selectAll("svg").remove();
+    svg = d3.select("#chart")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .style("display", "block")
+        .attr("font-family", "Arial, sans-serif");
+    return { width, height };
+}
+
+function drawBubbleChart(data) {
+    currentData = data;
+    // Only declare width/height once
+    var chartDims = initializeChart();
+    var width = chartDims.width;
+    var height = chartDims.height;
+    // Process data
+    const processedData = data.map(domain => ({
+        name: domain.name,
+        children: domain.children || [],
+        totalValue: (domain.children || []).reduce((sum, child) => sum + child.value, 0)
+    }));
+    // Stats panel
+    const totalPubs = processedData.reduce((sum, d) => sum + d.totalValue, 0);
+    const domainCount = processedData.length;
+    const subdomainCount = processedData.reduce((sum, d) => sum + (d.children?.length || 0), 0);
+    d3.select("#stats").html(`
+        <strong>Dataset Overview</strong><br>
+        Domains: ${domainCount}<br>
+        Subdomains: ${subdomainCount}<br>
+        Total Publications: ${totalPubs}
+    `);
+    // Color palette
+    const colorScale = d3.scaleOrdinal([
+        "#3498db", "#e74c3c", "#2ecc71", "#f39c12", 
+        "#9b59b6", "#1abc9c", "#34495e", "#e67e22",
+        "#16a085", "#c0392b", "#8e44ad", "#f1c40f"
+    ]);
+    // Calculate grid layout for domains
+    const domainsPerRow = Math.ceil(Math.sqrt(processedData.length));
+    // Reduce grid cell size and margin for less spacing
+    const gridWidth = width / domainsPerRow * 0.9;
+    const gridHeight = height / Math.ceil(processedData.length / domainsPerRow) * 0.85;
+    const margin = 20;
+    // Position domains in grid
+    const domainPositions = processedData.map((domain, i) => {
+        const row = Math.floor(i / domainsPerRow);
+        const col = i % domainsPerRow;
+        const x = col * gridWidth + gridWidth / 2;
+        const y = row * gridHeight + gridHeight / 2;
+        // Calculate domain radius based on total value
+        const maxDomainValue = Math.max(...processedData.map(d => d.totalValue));
+        const maxRadius = Math.min(gridWidth, gridHeight) * 0.3 * bubbleScale;
+        const radius = Math.sqrt(domain.totalValue / maxDomainValue) * maxRadius + 20 * bubbleScale;
+        return {
+            ...domain,
+            x: x,
+            y: y,
+            r: radius
+        };
+    });
+    // Find the lowest bubble to adjust SVG height
+    let lowest = 0;
+    domainPositions.forEach(domain => {
+        const subdomainData = {
+            name: domain.name,
+            children: domain.children.map(child => ({
+                name: child.name,
+                value: child.value
+            }))
+        };
+        const packLayout = d3.pack()
+            .size([domain.r * 1.6, domain.r * 1.6])
+            .padding(8);
+        const root = d3.hierarchy(subdomainData)
+            .sum(d => d.value);
+        const packed = packLayout(root);
+        const subdomains = packed.children || [];
+        subdomains.forEach(subdomain => {
+            let subY = domain.y + subdomain.y - domain.r * 0.8;
+            let subR = subdomain.r;
+            if (subY + subR > lowest) lowest = subY + subR;
+        });
+    });
+    // Adjust SVG height so bottom edge is close to lowest bubble
+    let marginBottom = 100; // minimal margin
+    let newHeight = Math.ceil(lowest + marginBottom);
+    svg.attr("height", newHeight);
+    // Use the main svg directly, so all elements are top-level SVG objects
+    const container = svg;
+    // Tooltip
+    var tooltip = d3.select("body").select(".tooltip");
+    if (tooltip.empty()) {
+        tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+    }
+
+    // Draw domains and subdomains
+    domainPositions.forEach(domain => {
+        // Calculate subdomain positions using d3.pack
+        const subdomainData = {
+            name: domain.name,
+            children: domain.children.map(child => ({
+                name: child.name,
+                value: child.value
+            }))
+        };
+        const packLayout = d3.pack()
+            .size([domain.r * 1.6, domain.r * 1.6])
+            .padding(8);
+        const root = d3.hierarchy(subdomainData)
+            .sum(d => d.value);
+        const packed = packLayout(root);
+
+        const subdomains = packed.children || [];
+        subdomains.forEach((subdomain, idx) => {
+            let subX = domain.x + subdomain.x - domain.r * 0.8;
+            let subY = domain.y + subdomain.y - domain.r * 0.8;
+            const subR = subdomain.r;
+            const fontSize = Math.min(12, subR * 0.4);
+        const textLength = subdomain.data.name.length;
+        // Only allow text inside bubble if it fits comfortably (not touching edge)
+        // Use a stricter threshold: text width < bubble diameter * 0.8
+        const canFitText = subR > 15 && (textLength * fontSize * 0.6) < (subR * 2 * 0.8);
+
+            // Draw bubble with drag behavior
+            let label = null, line = null, extLabel = null;
+            const bubble = container.append("circle")
+                .attr("cx", subX)
+                .attr("cy", subY)
+                .attr("r", subR)
+                .attr("fill", colorScale(domain.name))
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 2)
+                .attr("class", "bubble")
+                .attr("data-domain", domain.name)
+                .attr("data-subdomain", subdomain.data.name)
+                .call(d3.drag()
+                    .on("drag", function(event) {
+                        subX = event.x;
+                        subY = event.y;
+                        d3.select(this)
+                            .attr("cx", subX)
+                            .attr("cy", subY);
+                        if (canFitText) {
+                            label.attr("x", subX)
+                                 .attr("y", subY + fontSize / 3);
+                        } else {
+                            // Move line and external label
+                            const labelAngle = Math.atan2(subY - domain.y, subX - domain.x);
+                            const labelDistance = subR + 45;
+                            const labelX = subX + Math.cos(labelAngle) * labelDistance;
+                            const labelY = subY + Math.sin(labelAngle) * labelDistance;
+                            line.attr("x1", subX + Math.cos(labelAngle) * subR)
+                                .attr("y1", subY + Math.sin(labelAngle) * subR)
+                                .attr("x2", labelX - Math.cos(labelAngle) * 10)
+                                .attr("y2", labelY - Math.sin(labelAngle) * 10);
+                            extLabel.attr("x", labelX)
+                                    .attr("y", labelY + 4);
+                        }
+                    })
+                );
+
+                if (canFitText) {
+                    // Subdomain label inside bubble (not draggable), always centered
+                    label = container.append("text")
+                        .attr("x", subX)
+                        .attr("y", subY)
+                        .attr("class", "subdomain-label")
+                        .attr("data-domain", domain.name)
+                        .attr("data-subdomain", subdomain.data.name)
+                        .attr("text-anchor", "middle")
+                        .attr("dominant-baseline", "middle")
+                        .style("font-size", fontSize + "px")
+                        .style("fill", subR < 25 ? "#fff" : "#2c3e50")
+                        .text(subdomain.data.name);
+                } else {
+                    // External label and line, label draggable
+                    let labelAngle = Math.atan2(subY - domain.y, subX - domain.x);
+                    let labelDistance = subR + 45;
+                    let labelX = subX + Math.cos(labelAngle) * labelDistance;
+                    let labelY = subY + Math.sin(labelAngle) * labelDistance;
+                    line = container.append("line")
+                        .attr("class", "label-line")
+                        .attr("data-domain", domain.name)
+                        .attr("data-subdomain", subdomain.data.name)
+                        .attr("x1", subX + Math.cos(labelAngle) * subR)
+                        .attr("y1", subY + Math.sin(labelAngle) * subR)
+                        .attr("x2", labelX - Math.cos(labelAngle) * 10)
+                        .attr("y2", labelY - Math.sin(labelAngle) * 10)
+                        .style("stroke", "#666")
+                        .style("stroke-width", "1.5px")
+                        .style("stroke-dasharray", "3,3")
+                        .style("opacity", 0.7);
+                    extLabel = container.append("text")
+                        .attr("x", labelX)
+                        .attr("y", labelY)
+                        .attr("class", "external-label")
+                        .attr("data-domain", domain.name)
+                        .attr("data-subdomain", subdomain.data.name)
+                        .attr("text-anchor", "middle")
+                        .attr("dominant-baseline", "middle")
+                        .style("font-size", "12px")
+                        .style("fill", "#2c3e50")
+                        .style("font-weight", "600")
+                        .text(subdomain.data.name)
+                        .call(d3.drag()
+                            .on("drag", function(event) {
+                                labelX = event.x;
+                                labelY = event.y;
+                                d3.select(this)
+                                    .attr("x", labelX)
+                                    .attr("y", labelY);
+                                line.attr("x2", labelX - Math.cos(labelAngle) * 10)
+                                    .attr("y2", labelY - Math.sin(labelAngle) * 10);
+                            })
+                        );
+                }
+        });
+
+        // Domain label as separate SVG text, now draggable
+        let domainLabelX = domain.x;
+        let domainLabelY = domain.y - domain.r - 15;
+        container.append("text")
+            .attr("x", domainLabelX)
+            .attr("y", domainLabelY)
+            .attr("class", "domain-label")
+            .attr("data-domain", domain.name)
+            .attr("text-anchor", "middle")
+            .attr("dominant-baseline", "middle")
+            .style("font-size", "18px")
+            .style("font-weight", "bold")
+            .text(domain.name.toUpperCase())
+            .call(d3.drag()
+                .on("drag", function(event) {
+                    domainLabelX = event.x;
+                    domainLabelY = event.y;
+                    d3.select(this)
+                        .attr("x", domainLabelX)
+                        .attr("y", domainLabelY);
+                })
+            )
+            .on("mouseover", function(event) {
+                tooltip.transition().duration(200).style("opacity", 1);
+                tooltip.html(`
+                    <strong>${domain.name} Domain</strong><br>
+                    Subdomains: ${domain.children.length}<br>
+                    Total Publications: ${domain.totalValue}
+                `)
+                .style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 15) + "px");
+            })
+            .on("mouseout", function() {
+                tooltip.transition().duration(200).style("opacity", 0);
+            });
+    }); 
+} 
+  
 
 if (typeof chartData !== 'undefined') {
     drawBubbleChart(chartData.data);
+} else {
+    drawBubbleChart(testData);
 }
+
 window.addEventListener('resize', function() {
     if (currentData) drawBubbleChart(currentData);
 });
+
+// Bubble scale slider handler
+document.getElementById('bubble-scale').addEventListener('input', function(e) {
+    bubbleScale = parseFloat(e.target.value);
+    document.getElementById('bubble-scale-value').textContent = bubbleScale.toFixed(2) + 'x';
+    if (currentData) drawBubbleChart(currentData);
+});
+
 window.updateData = function(newData) {
     drawBubbleChart(newData);
 };

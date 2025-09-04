@@ -11,4 +11,4 @@ def d3_bubble_chart(data):
     # Inject data into HTML
     html = html.replace("/*DATA_PLACEHOLDER*/", f"const chartData = {data_json};")
     # Set height to a large value and allow scrolling
-    components.html(html, height=1400, scrolling=True)
+    components.html(html, height=1200, scrolling=True)
