@@ -7,7 +7,11 @@
 
 ## Setup
 
-1. Open a terminal in this folder.
+1. Erstelle ein eigenes Conda-Environment:
+   ```bash
+   conda create -n bubble_graph python
+   conda activate bubble_graph
+   ```
 2. Install dependencies:
    ```
    pip install -r requirements.txt
