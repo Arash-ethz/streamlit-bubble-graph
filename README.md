@@ -7,7 +7,7 @@
 
 ## Setup
 
-1. Erstelle ein eigenes Conda-Environment:
+1. Create your own Conda-Environment:
    ```bash
    conda create -n bubble_graph python
    conda activate bubble_graph
